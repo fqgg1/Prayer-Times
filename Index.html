@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Islamic Prayer Times</title>
+<style>
+:root {
+  --primary: #38bdf8; 
+  --bg: #f0f8ff;
+  --card: #ffffff;
+  --box: #e0f2fe88;
+  --text: #000000;
+}
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  transition: 0.3s;
+}
+.container {
+  background: var(--card);
+  padding: 30px;
+  border-radius: 16px;
+  width: 420px;
+  box-shadow: 0 0 30px rgba(0,0,0,0.2);
+  position: relative;
+  text-align: center;
+}
+h1 { margin: 0; }
+.date { font-size: 14px; opacity: 0.8; margin-top: 5px; }
+.clock { font-size: 28px; font-weight: bold; margin: 15px 0 10px 0; color: var(--primary); }
+.loader {
+  border: 6px solid #f3f3f3;
+  border-top: 6px solid var(--primary);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 15px auto;
+  display: none;
+}
+@keyframes spin {0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);}}
+.prayer-times div {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: var(--box);
+  transition: 0.3s;
+}
+.active {
+  background: var(--primary);
+  box-shadow: 0 0 15px var(--primary);
+}
+.settings-btn { position: absolute; top: 15px; right: 15px; cursor: pointer; }
+.map-btn { position: absolute; top: 15px; left: 15px; cursor: pointer; }
+.settings-panel {
+  position: fixed;
+  right: -360px;
+  top: 0;
+  width: 340px;
+  height: 100%;
+  background: var(--card);
+  color: var(--text);
+  padding: 20px;
+  transition: 0.4s;
+  overflow-y: auto;
+}
+.settings-panel.open { right: 0; }
+.settings-panel input,
+.settings-panel select {
+  width: 100%;
+  padding: 6px;
+  margin-bottom: 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+.settings-panel button {
+  padding: 10px;
+  width: 100%;
+  background: var(--primary);
+  border: none;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.custom-options { display: none; margin-top: 10px; padding: 10px; background: var(--box); border-radius: 8px; }
+/* Map modal */
+#mapModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:9999; }
+#mapModal div { background:var(--card); color:var(--text); padding:20px; border-radius:12px; max-width:300px; text-align:center; }
+#mapModal button { margin:5px; padding:8px 16px; border:none; border-radius:6px; cursor:pointer; }
+#mapModal .openBtn { background:var(--primary); color:white; }
+#mapModal .cancelBtn { background:#ccc; color:#000; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="map-btn" title="Show Location on Map" onclick="openMap()">🗺️</div>
+  <div class="settings-btn" onclick="toggleSettings()">⚙</div>
+  <h1>Islamic Prayer Times</h1>
+  <div class="date" id="date"></div>
+  <div class="clock" id="clock"></div>
+  <div class="loader" id="loader"></div>
+  <div class="prayer-times" id="prayerTimes"></div>
+</div>
+
+<div class="settings-panel" id="settingsPanel">
+  <h2>Settings</h2>
+  <label>Theme</label>
+  <select id="themeSelect" onchange="checkCustomTheme()">
+    <option value="system">System (Default)</option>
+    <option value="blue-light">Blue Light</option>
+    <option value="dark-blue">Dark Blue</option>
+    <option value="teal-light">Light Teal</option>
+    <option value="custom">Custom</option>
+  </select>
+
+  <div class="custom-options" id="customOptions">
+    <label>Highlight Colour</label>
+    <input type="color" id="primaryColor">
+    <label>Background Colour</label>
+    <input type="color" id="bgColor">
+    <label>Window Background</label>
+    <input type="color" id="cardColor">
+    <label>Prayer Box Colour</label>
+    <input type="color" id="boxColor">
+    <label>Text Colour</label>
+    <input type="color" id="textColor">
+  </div>
+
+  <label>Latitude</label>
+  <input type="number" id="latInput" step="any">
+  <label>Longitude</label>
+  <input type="number" id="lonInput" step="any">
+
+  <button onclick="saveSettings()">Save & Refresh Prayer Times</button>
+  <button onclick="editCustomTheme()" id="editThemeBtn" style="display:none;">Edit Custom Theme</button>
+  <button onclick="resetDefaults()">Reset to Defaults</button>
+
+  <hr>
+
+  <button onclick="exportSettings()">Download Preferences (JSON)</button>
+  <input type="file" accept=".json" onchange="importSettings(event)">
+</div>
+
+<!-- Map modal -->
+<div id="mapModal">
+  <div>
+    <p id="mapMsg"></p>
+    <button class="openBtn" onclick="confirmMap()">Open Maps</button>
+    <button class="cancelBtn" onclick="closeMapModal()">Cancel</button>
+  </div>
+</div>
+
+<script>
+// Default settings
+const defaultSettings = {
+  lat: 51.8765,
+  lon: -0.4325,
+  theme: "system",
+  primary: "#38bdf8",
+  bg: "#f0f8ff",
+  card: "#ffffff",
+  box: "#e0f2fe88",
+  text: "#000000"
+};
+if(!localStorage.getItem("prayerSettings")){
+  const darkScheme = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  defaultSettings.theme = darkScheme ? "dark-blue" : "blue-light";
+  localStorage.setItem("prayerSettings", JSON.stringify(defaultSettings));
+}
+let settings = JSON.parse(localStorage.getItem("prayerSettings")) || defaultSettings;
+let prayerTimes = {};
+let order = ["Fajr","Sunrise","Dhuhr","Asr","Maghrib","Isha"];
+const loader=document.getElementById("loader");
+
+// Theme
+function applyTheme(){
+  const root=document.documentElement;
+  const panel=document.getElementById("settingsPanel");
+  let theme=settings.theme;
+  if(theme==="system") theme=window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark-blue":"blue-light";
+  switch(theme){
+    case "blue-light": root.style.setProperty("--primary","#38bdf8"); root.style.setProperty("--bg","#f0f8ff"); root.style.setProperty("--card","#ffffff"); root.style.setProperty("--box","#e0f2fe88"); root.style.setProperty("--text","#000"); break;
+    case "dark-blue": root.style.setProperty("--primary","#60a5fa"); root.style.setProperty("--bg","#0f172a"); root.style.setProperty("--card","#1e293b"); root.style.setProperty("--box","#00000033"); root.style.setProperty("--text","#fff"); break;
+    case "teal-light": root.style.setProperty("--primary","#14b8a6"); root.style.setProperty("--bg","#e0f7fa"); root.style.setProperty("--card","#ffffff"); root.style.setProperty("--box","#b2dfdb88"); root.style.setProperty("--text","#000"); break;
+    case "custom": root.style.setProperty("--primary",settings.primary); root.style.setProperty("--bg",settings.bg); root.style.setProperty("--card",settings.card); root.style.setProperty("--box",settings.box); root.style.setProperty("--text",settings.text); break;
+  }
+  panel.style.backgroundColor = getComputedStyle(root).getPropertyValue("--card");
+  panel.style.color = getComputedStyle(root).getPropertyValue("--text");
+  panel.querySelectorAll("input, select").forEach(el=>{
+    el.style.backgroundColor = getComputedStyle(root).getPropertyValue("--bg");
+    el.style.color = getComputedStyle(root).getPropertyValue("--text");
+  });
+  panel.querySelectorAll("button").forEach(btn=>{
+    btn.style.backgroundColor = getComputedStyle(root).getPropertyValue("--primary");
+    btn.style.color = "white";
+  });
+}
+
+// Prayer times
+function loadPrayerTimes(){
+  loader.style.display="block";
+  document.getElementById("prayerTimes").innerHTML="";
+  setTimeout(()=>{
+    const apiURL=`https://islamicapi.com/api/v1/prayer-time/?lat=${settings.lat}&lon=${settings.lon}&method=MuslimWorldLeague&school=Standard&api_key=WGULlPJkmQRBwd0oPrlDatARG8qioNZuDX7YdDkl8MhBJdLa`;
+    fetch(apiURL).then(r=>r.json()).then(result=>{
+      const data=result.data;
+      prayerTimes=data.times;
+      document.getElementById("date").innerText = `${data.date.gregorian.date} | ${data.date.hijri.date}`;
+      const container=document.getElementById("prayerTimes");
+      container.innerHTML="";
+      order.forEach(name=>{
+        const div=document.createElement("div");
+        div.dataset.name=name;
+        div.innerHTML=`<span>${name}</span><span>${prayerTimes[name]}</span>`;
+        container.appendChild(div);
+      });
+      loader.style.display="none";
+    });
+  },1500);
+}
+
+function timeToMinutes(t){const [h,m]=t.split(":").map(Number);return h*60+m;}
+function updateClockAndActive(){
+  const now=new Date();
+  document.getElementById("clock").innerText=now.toLocaleTimeString();
+  if(!prayerTimes.Fajr) return;
+  const current=now.getHours()*60+now.getMinutes();
+  let active="";
+  for(let i=0;i<order.length;i++){
+    const thisTime=timeToMinutes(prayerTimes[order[i]]);
+    const nextTime=order[i+1]?timeToMinutes(prayerTimes[order[i+1]]):1440;
+    if(current>=thisTime && current<nextTime){active=order[i];break;}
+  }
+  document.querySelectorAll(".prayer-times div").forEach(div=>{
+    div.classList.remove("active");
+    if(div.dataset.name===active){div.classList.add("active");}
+  });
+}
+
+// Settings
+function toggleSettings(){settingsPanel.classList.toggle("open");}
+function checkCustomTheme(){ customOptions.style.display = themeSelect.value==="custom"?"block":"none"; }
+function saveSettings(){
+  settings.lat=parseFloat(latInput.value);
+  settings.lon=parseFloat(lonInput.value);
+  settings.theme=themeSelect.value;
+  if(settings.theme==="custom"){
+    settings.primary=primaryColor.value;
+    settings.bg=bgColor.value;
+    settings.card=cardColor.value;
+    settings.box=boxColor.value;
+    settings.text=textColor.value;
+    document.querySelectorAll("#customOptions input").forEach(i=>i.disabled=true);
+    editThemeBtn.style.display="block";
+  }
+  localStorage.setItem("prayerSettings",JSON.stringify(settings));
+  applyTheme();
+  loadPrayerTimes();
+  toggleSettings();
+}
+function editCustomTheme(){
+  document.querySelectorAll("#customOptions input").forEach(i=>i.disabled=false);
+  editThemeBtn.style.display="none";
+}
+function resetDefaults(){
+  settings = {...defaultSettings};
+  localStorage.setItem("prayerSettings", JSON.stringify(settings));
+  latInput.value = settings.lat;
+  lonInput.value = settings.lon;
+  themeSelect.value = settings.theme;
+  primaryColor.value = settings.primary;
+  bgColor.value = settings.bg;
+  cardColor.value = settings.card;
+  boxColor.value = settings.box;
+  textColor.value = settings.text;
+  checkCustomTheme();
+  applyTheme();
+  loadPrayerTimes();
+}
+
+// Map modal
+const mapModal = document.getElementById("mapModal");
+const mapMsg = document.getElementById("mapMsg");
+function openMap(){
+  mapMsg.innerText = `Your coordinates are:\nLatitude: ${settings.lat}\nLongitude: ${settings.lon}\n\nWould you like to open this location on Google Maps?`;
+  mapModal.style.display = "flex";
+}
+function closeMapModal(){ mapModal.style.display = "none"; }
+function confirmMap(){ window.open(`https://www.google.com/maps?q=${settings.lat},${settings.lon}`, "_blank"); closeMapModal(); }
+
+// Export/Import JSON
+function exportSettings(){
+  const dataStr = JSON.stringify(settings, null, 2);
+  const blob = new Blob([dataStr], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "prayerSettings.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function importSettings(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      const importedSettings = JSON.parse(e.target.result);
+      const keys = ["lat","lon","theme","primary","bg","card","box","text"];
+      const valid = keys.every(k => importedSettings.hasOwnProperty(k));
+      if(!valid) { alert("Invalid JSON file."); return; }
+      settings = importedSettings;
+      localStorage.setItem("prayerSettings", JSON.stringify(settings));
+      latInput.value = settings.lat;
+      lonInput.value = settings.lon;
+      themeSelect.value = settings.theme;
+      primaryColor.value = settings.primary;
+      bgColor.value = settings.bg;
+      cardColor.value = settings.card;
+      boxColor.value = settings.box;
+      textColor.value = settings.text;
+      checkCustomTheme();
+      applyTheme();
+      loadPrayerTimes();
+      alert("Settings imported successfully!");
+    } catch(err){ alert("Error reading JSON file: "+err); }
+  };
+  reader.readAsText(file);
+  event.target.value = "";
+}
+
+// Init
+latInput.value=settings.lat;
+lonInput.value=settings.lon;
+themeSelect.value=settings.theme;
+primaryColor.value=settings.primary;
+bgColor.value=settings.bg;
+cardColor.value=settings.card;
+boxColor.value=settings.box;
+textColor.value=settings.text;
+checkCustomTheme();
+applyTheme();
+loadPrayerTimes();
+setInterval(updateClockAndActive,1000);
+if(settings.theme==="custom"){
+  document.querySelectorAll("#customOptions input").forEach(i=>i.disabled=true);
+  editThemeBtn.style.display="block";
+}
+</script>
+</body>
+</html>
